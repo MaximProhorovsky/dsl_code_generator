@@ -28,7 +28,7 @@ namespace dsl::templates{
                 if (sign == '-') expr << "-";
                 expr << src_signal;
             } else {
-                expr << (sign == '-' ? " - " : " + ") << src_signal;
+                expr << " " << sign << " "  << src_signal;
             }
             current_port++;
         }

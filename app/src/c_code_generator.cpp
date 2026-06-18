@@ -10,9 +10,9 @@ namespace dsl {
         templates_registry_[types::BlockType::unit_delay] = std::make_unique<templates::UnitDelayBlockTemplate>();
     }
 
-    void CCodeGenerator::generate(const types::Model & model, const std::vector<std::string> & order, IWriter &writer) {
+    void CCodeGenerator::generate(const types::Model &model, const std::vector<std::string> &order, IWriter &writer) {
         block_map_t block_map;
-        for (const auto & b : model.blocks) {
+        for (const auto &b : model.blocks) {
             block_map[b.sid] = &b;
         }
 
@@ -29,7 +29,7 @@ namespace dsl {
     }
 
     void CCodeGenerator::build_signal_maps(const types::Model &model, const block_map_t &block_map, signal_map_t &signal_sources) {
-        for (const auto & line : model.lines) {
+        for (const auto &line : model.lines) {
             if (!block_map.contains(line.src_sid)) continue;
             
             auto src_block = block_map.at(line.src_sid);
@@ -39,7 +39,7 @@ namespace dsl {
             if (!line.dst_sid.empty()) {
                 signal_sources[line.dst_sid][line.dst_port] = expr;
             }
-            for (const auto & br : line.branches) {
+            for (const auto &br : line.branches) {
                 signal_sources[br.target_sid][br.port_number] = expr;
             }
         }
@@ -49,18 +49,18 @@ namespace dsl {
         writer.write("#include \"nwocg_run.h\"\n#include <math.h>\n\n");
     }
 
-    void CCodeGenerator::write_struct_definition(IWriter &writer, const types::Model & model) {
+    void CCodeGenerator::write_struct_definition(IWriter &writer, const types::Model &model) {
         writer.write("static struct\n{\n");
-        for (const auto & b : model.blocks) {
+        for (const auto &b : model.blocks) {
             if (b.type == types::BlockType::outport) continue;
             writer.write("  double " + b.clean_name + ";\n");
         }
         writer.write("} nwocg;\n\n");
     }
 
-    void CCodeGenerator::write_init_function(IWriter &writer, const types::Model & model) {
+    void CCodeGenerator::write_init_function(IWriter &writer, const types::Model &model) {
         writer.write("void nwocg_generated_init()\n{\n");
-        for (const auto & b : model.blocks) {
+        for (const auto &b : model.blocks) {
             if (b.type == types::BlockType::unit_delay) {
                 writer.write("  " + std::string(constants::code_prefix) + b.clean_name + " = 0;\n");
             }
@@ -68,11 +68,11 @@ namespace dsl {
         writer.write("}\n\n");
     }
 
-    void CCodeGenerator::write_step_function(IWriter &writer, const block_map_t &block_map, const std::vector<std::string> & order, const signal_map_t & signal_sources) {
+    void CCodeGenerator::write_step_function(IWriter &writer, const block_map_t &block_map, const std::vector<std::string> &order, const signal_map_t &signal_sources) {
         writer.write("void nwocg_generated_step()\n{\n");
         std::vector<const types::Block *> delays_to_update;
 
-        for (const auto & sid : order) {
+        for (const auto &sid : order) {
             if (block_map.contains(sid)) {
                 process_single_block_step(writer, block_map.at(sid), signal_sources, delays_to_update);
             }
@@ -86,7 +86,7 @@ namespace dsl {
         writer.write("}\n\n");
     }
 
-    void CCodeGenerator::process_single_block_step(IWriter &writer, const types::Block * b, const signal_map_t & signal_sources, std::vector<const types::Block *> & delays) {
+    void CCodeGenerator::process_single_block_step(IWriter &writer, const types::Block * b, const signal_map_t &signal_sources, std::vector<const types::Block *> &delays) {
         if (b->type == types::BlockType::inport || b->type == types::BlockType::outport) return;
 
         if (b->type == types::BlockType::unit_delay) {
@@ -100,21 +100,23 @@ namespace dsl {
         }
     }
 
-    void CCodeGenerator::write_ext_ports(IWriter &writer, const types::Model & model) {
+    void CCodeGenerator::write_ext_ports(IWriter &writer, const types::Model &model) {
         writer.write("static const nwocg_ExtPort ext_ports[] =\n{\n");
         
         std::unordered_map<std::string, std::string> outport_sources;
-        for (const auto & line : model.lines) {
+        for (const auto &line : model.lines) {
             if (!line.dst_sid.empty()) outport_sources[line.dst_sid] = line.src_sid;
-            for (const auto & br : line.branches) outport_sources[br.target_sid] = line.src_sid;
+            for (const auto &br : line.branches) outport_sources[br.target_sid] = line.src_sid;
         }
 
         std::unordered_map<std::string, const types::Block *> block_by_sid;
-        for (const auto & b : model.blocks) block_by_sid[b.sid] = &b;
+        for (const auto &b : model.blocks) block_by_sid[b.sid] = &b;
 
-        for (const auto & b : model.blocks) {
+        for (const auto &b : model.blocks) {
+            int port_number = b.ports.empty() ? 0 : b.ports.front().number;
+
             if (b.type == types::BlockType::inport) {
-                writer.write("  { \"" + b.name + "\", &" + std::string(constants::code_prefix) + b.clean_name + ", 1 },\n");
+                writer.write("  { \"" + b.name + "\", &" + std::string(constants::code_prefix) + b.clean_name + ", " + std::to_string(port_number) + " },\n");
             } 
             else if (b.type == types::BlockType::outport) {
                 std::string src_ptr = "0";
@@ -124,7 +126,7 @@ namespace dsl {
                         src_ptr = "&" + std::string(constants::code_prefix) + block_by_sid.at(src_sid)->clean_name;
                     }
                 }
-                writer.write("  { \"" + b.name + "\", " + src_ptr + ", 0 },\n");
+                writer.write("  { \"" + b.name + "\", " + src_ptr + ", " + std::to_string(port_number) + " },\n");
             }
         }
         writer.write("  { 0, 0, 0 }\n};\n\n"
